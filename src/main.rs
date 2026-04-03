@@ -1,4 +1,4 @@
-use sysinfo::System;
+use sysinfo::{System, CpuRefreshKind, RefreshKind};
 use rand::distr::{Distribution, Uniform};
 use rand::rngs::ThreadRng;
 
@@ -138,7 +138,7 @@ impl<'a> App<'a> {
         let sin1_points = sin_signal.by_ref().take(100).collect();
         Self {
             title: "TITLE",
-            tabs: TabsState::new(vec!["Perfomance", "Info", "Other"]),
+            tabs: TabsState::new(vec!["Power", "Info", "Other"]),
             sparkline: Signal {
                 source: rand_signal,
                 points: sparkline_points,
@@ -199,15 +199,14 @@ impl<'a> App<'a> {
         frame.render_widget(tabs, chunks[0]);
         match self.tabs.index {
             0 => self.render_first_tab(frame, chunks[1]),
-            1 => self.render_second_tab(frame, chunks[1]),
             _ => {}
         };
     }
 
     fn render_first_tab(&self, frame: &mut Frame, area: Rect) {
         let [h1, h2] = Layout::horizontal([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
+            Constraint::Percentage(60),
+            Constraint::Percentage(40),
         ])
         .areas(area);
 
@@ -223,82 +222,13 @@ impl<'a> App<'a> {
         ])
         .areas(h2);
 
-        self.draw_chart(frame, cpu_usage);
-
-        let gpu = Block::bordered()
-            .style(Style::new().yellow().on_black().bold())
-            .title("GPU usage");
-        frame.render_widget(gpu, gpu_usage);
-
-        let disk = Block::bordered()
-            .style(Style::new().green().on_black().bold())
-            .title("Disk usage");
-        frame.render_widget(disk, disk_usage);
-        
-        let wifi = Block::bordered()
-            .style(Style::new().blue().on_black().bold())
-            .title("Wi-fi usage");
-        frame.render_widget(wifi, wifi_usage);
+        self.draw_cpu_chart(frame, cpu_usage);
+        self.draw_gpu_chart(frame, gpu_usage);
     }
 
-    fn render_second_tab(&self, frame: &mut Frame, area: Rect) {
-        let [h1, h2] = Layout::horizontal([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
-        .areas(area);
-
-        let [cpu_usage, gpu_usage] = Layout::vertical([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
-        .areas(h1);
-
-        let [disk_usage, wifi_usage] = Layout::vertical([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
-        .areas(h2);
-
-        let cpu = Block::bordered()
-            .style(Style::new().red().on_black().bold())
-            .title("CPU usage");
-        frame.render_widget(cpu, cpu_usage);
-
-        let gpu = Block::bordered()
-            .style(Style::new().yellow().on_black().bold())
-            .title("GPU usage");
-        frame.render_widget(gpu, gpu_usage);
-
-        let disk = Block::bordered()
-            .style(Style::new().green().on_black().bold())
-            .title("Disk usage");
-        frame.render_widget(disk, disk_usage);
-        
-        let wifi = Block::bordered()
-            .style(Style::new().blue().on_black().bold())
-            .title("Wi-fi usage");
-        frame.render_widget(wifi, wifi_usage);
-    }
-
-    fn draw_chart(&self, frame: &mut Frame, area: Rect) {
-        let x_labels = vec![
-            Span::styled(
-                format!("{}", self.signals.window[0]),
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(format!(
-                "{}",
-                (self.signals.window[0] + self.signals.window[1]) / 2.0
-            )),
-            Span::styled(
-                format!("{}", self.signals.window[0]),
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
-        ];
+    fn draw_cpu_chart(&self, frame: &mut Frame, area: Rect) {
         let datasets = vec![
             Dataset::default()
-                .name("data2")
                 .marker(ratatui::symbols::Marker::Dot)
                 .style(Style::default().fg(Color::Cyan))
                 .data(&self.signals.sin.points),
@@ -306,7 +236,7 @@ impl<'a> App<'a> {
         let chart = Chart::new(datasets)
             .block(
                 Block::bordered().title(Span::styled(
-                    "Chart",
+                    "CPU",
                     Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
@@ -314,19 +244,49 @@ impl<'a> App<'a> {
             )
             .x_axis(
                 Axis::default()
-                    .title("X Axis")
                     .style(Style::default().fg(Color::Gray))
                     .bounds(self.signals.window)
-                    .labels(x_labels),
             )
             .y_axis(
                 Axis::default()
-                    .title("Y Axis")
                     .style(Style::default().fg(Color::Gray))
-                    .bounds([0.0, 100.0])
+                    .bounds([-20.0, 20.0])
                     .labels([
                         Span::styled("0", Style::default().add_modifier(Modifier::BOLD)),
                         Span::raw("50"),
+                        Span::styled("100", Style::default().add_modifier(Modifier::BOLD)),
+                    ]),
+            );
+        frame.render_widget(chart, area);
+    }
+
+    fn draw_gpu_chart(&self, frame: &mut Frame, area: Rect) {
+        let datasets = vec![
+            Dataset::default()
+                .marker(ratatui::symbols::Marker::Dot)
+                .style(Style::default().fg(Color::Red))
+                .data(&self.signals.sin.points),
+        ];
+        let chart = Chart::new(datasets)
+            .block(
+                Block::bordered().title(Span::styled(
+                    "GPU",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )),
+            )
+            .x_axis(
+                Axis::default()
+                    .style(Style::default().fg(Color::Gray))
+                    .bounds(self.signals.window)
+            )
+            .y_axis(
+                Axis::default()
+                    .style(Style::default().fg(Color::Gray))
+                    .bounds([-20.0, 20.0])
+                    .labels([
+                        Span::styled("0", Style::default().add_modifier(Modifier::BOLD)),
                         Span::styled("100", Style::default().add_modifier(Modifier::BOLD)),
                     ]),
             );
@@ -337,4 +297,20 @@ impl<'a> App<'a> {
         self.sparkline.on_tick();
         self.signals.on_tick();
     }
+}
+
+fn get_cpu_usage() -> Result<f32> {
+    let mut sys = System::new_with_specifics(
+        RefreshKind::nothing().with_cpu(CpuRefreshKind::everything()),
+    );
+
+    std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+
+    sys.refresh_cpu_all();
+
+    for cpu in sys.cpus() {
+        println!("CPU: {}% Usage", cpu.cpu_usage());
+    }
+
+    Ok(sys.global_cpu_usage())
 }
