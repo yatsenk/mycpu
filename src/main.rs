@@ -114,7 +114,6 @@ impl<'a> TabsState<'a> {
 #[derive(Debug)]
 struct Cpu {
     sys: System,
-    total_frequency: u64,
 }
 
 impl Cpu {
@@ -125,27 +124,25 @@ impl Cpu {
 
         Self {
             sys,
-            total_frequency: 0,
         }
     }
 
     fn get_usage(&mut self) -> f32 {
         std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-
         self.sys.refresh_cpu_all();  
-
         self.sys.global_cpu_usage()
     }
 
     fn get_frequency(&mut self) -> u64 {
-        self.sys.refresh_cpu_all(); 
+        self.sys.cpus().iter().map(|cpu| cpu.frequency()).sum()
+    }
 
-        self.total_frequency = 0;
-        for cpu in self.sys.cpus() {
-            self.total_frequency += cpu.frequency()
-        }
+    fn get_max_frequency(&mut self) -> u64 {
+        60000
+    }
 
-        self.total_frequency
+    fn get_name(&mut self) -> String {
+        self.sys.cpus().iter().map(|cpu| cpu.name()).collect()
     }
 }
 
@@ -158,27 +155,35 @@ struct App<'a> {
     cpu: Cpu,
     usage: f32,
     frequency: u64,
+    max_frequency: u64,
+    name: String,
     temperature: f32,
 }
 
 impl<'a> App<'a> {
     fn new() -> Self {
+        let mut cpu = Cpu::new();
+        let max_frequency = cpu.get_max_frequency();
+        let frequency = cpu.get_frequency();
+        let name = cpu.get_name();
         Self {
             title: "MyCPU",
             tabs: TabsState::new(vec!["Power", "Info", "Other"]),
             logs: StatefulList::with_items(LOGS.to_vec()),
-            cpu: Cpu::new(),
+            cpu,
             usage: 0.0,
-            frequency: 0,
+            frequency,
+            max_frequency,
+            name,
             temperature: 0.0,
         }
     }
 
-    pub fn on_right(&mut self) {
+    fn on_right(&mut self) {
         self.tabs.next();
     }
 
-    pub fn on_left(&mut self) {
+    fn on_left(&mut self) {
         self.tabs.previous();
     }
 
@@ -275,26 +280,39 @@ impl<'a> App<'a> {
         frame.render_widget(block, area);
         
         let usage_gauge = LineGauge::default()
-            .block(Block::new().title("Usage:"))
+            .block(Block::new().title("Usage"))
             .filled_style(Style::default().fg(Color::Magenta))
             .filled_symbol(symbols::line::THICK_HORIZONTAL)
             .unfilled_symbol(symbols::line::THICK_HORIZONTAL)
-            .label(format!("{}%", self.usage))
+            .label(format!("{}%", self.usage.round()))
             .ratio(self.usage as f64 / 100.0);
         frame.render_widget(usage_gauge, chunks[1]);
 
+        let ratio =  self.frequency / self.max_frequency;
         let frequency_gauge = LineGauge::default()
-            .block(Block::new().title("Frequency:"))
+            .block(Block::new().title("Frequency"))
             .filled_style(Style::default().fg(Color::Magenta))
             .filled_symbol(symbols::line::THICK_HORIZONTAL)
             .unfilled_symbol(symbols::line::THICK_HORIZONTAL)
             .label(format!("{} MHz", self.frequency))
-            .ratio(self.frequency as f64 / 100_000.0);
+            .ratio(ratio as f64);
         frame.render_widget(frequency_gauge, chunks[2]);
     }
 
     fn draw_text(&self, frame: &mut Frame, area: Rect) {
         let text = vec![
+            Line::from(vec![
+                Span::from("Name: "),
+                Span::styled(self.name.clone(), Style::default().fg(Color::Rgb(255, 165, 0))),
+            ]),
+            Line::from(vec![
+                Span::from("Brand: "),
+                Span::styled(format!("63°C"), Style::default().fg(Color::Rgb(255, 165, 0))),
+            ]),
+            Line::from(vec![
+                Span::from("Vendor ID: "),
+                Span::styled(format!("63°C"), Style::default().fg(Color::Rgb(255, 165, 0))),
+            ]),
             Line::from(vec![
                 Span::from("Temperature: "),
                 Span::styled(format!("63°C"), Style::default().fg(Color::Rgb(255, 165, 0))),
