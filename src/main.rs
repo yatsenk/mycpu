@@ -1,4 +1,9 @@
-use sysinfo::{System, CpuRefreshKind, RefreshKind};
+use sysinfo::{
+    System, 
+    CpuRefreshKind, 
+    RefreshKind, 
+    Components,
+};
 
 use color_eyre::Result;
 use crossterm::event::{self, KeyCode};
@@ -114,6 +119,7 @@ impl<'a> TabsState<'a> {
 #[derive(Debug)]
 struct Cpu {
     sys: System,
+    comps: Components,
 }
 
 impl Cpu {
@@ -122,8 +128,11 @@ impl Cpu {
             RefreshKind::nothing().with_cpu(CpuRefreshKind::everything()),
         );
 
+        let comps = Components::new_with_refreshed_list();
+
         Self {
             sys,
+            comps,
         }
     }
 
@@ -134,6 +143,7 @@ impl Cpu {
     }
 
     fn get_frequency(&mut self) -> u64 {
+        self.sys.refresh_cpu_all();
         self.sys.cpus().iter().map(|cpu| cpu.frequency()).sum()
     }
 
@@ -144,7 +154,27 @@ impl Cpu {
     fn get_name(&mut self) -> String {
         self.sys.cpus().iter().map(|cpu| cpu.name()).collect()
     }
-}
+
+    fn get_brand(&mut self) -> String {
+        let names: Vec<&str> = self.sys.cpus().iter().map(|cpu| cpu.brand()).collect();
+        names[0].to_string()
+    }
+
+    fn get_vendor_id(&mut self) -> String {
+        let ids: Vec<&str> = self.sys.cpus().iter().map(|cpu| cpu.vendor_id()).collect();
+        ids[0].to_string()
+    }
+
+    fn get_cpu_temp(&mut self) -> f32 {
+        for comp in &self.comps {
+            if let Some(temperature) = comp.temperature() {
+                return temperature;
+            }
+        }
+
+        return 0.0;
+    }
+} 
 
 
 #[derive(Debug)]
@@ -157,6 +187,8 @@ struct App<'a> {
     frequency: u64,
     max_frequency: u64,
     name: String,
+    brand: String,
+    vendor_id: String,
     temperature: f32,
 }
 
@@ -166,6 +198,9 @@ impl<'a> App<'a> {
         let max_frequency = cpu.get_max_frequency();
         let frequency = cpu.get_frequency();
         let name = cpu.get_name();
+        let brand = cpu.get_brand();
+        let vendor_id = cpu.get_vendor_id();
+        let temperature = cpu.get_cpu_temp();
         Self {
             title: "MyCPU",
             tabs: TabsState::new(vec!["Power", "Info", "Other"]),
@@ -175,7 +210,9 @@ impl<'a> App<'a> {
             frequency,
             max_frequency,
             name,
-            temperature: 0.0,
+            brand, 
+            vendor_id,
+            temperature,
         }
     }
 
@@ -273,28 +310,28 @@ impl<'a> App<'a> {
             Constraint::Length(3),
             Constraint::Length(2),
         ])
-        .horizontal_margin(1)
+        .horizontal_margin(2)
         .split(area);
 
         let block = Block::bordered();
         frame.render_widget(block, area);
         
         let usage_gauge = LineGauge::default()
-            .block(Block::new().title("Usage"))
+            .block(Block::new().title(format!("Usage: {}%", self.usage.round())))
             .filled_style(Style::default().fg(Color::Magenta))
             .filled_symbol(symbols::line::THICK_HORIZONTAL)
             .unfilled_symbol(symbols::line::THICK_HORIZONTAL)
-            .label(format!("{}%", self.usage.round()))
+            .label("")
             .ratio(self.usage as f64 / 100.0);
         frame.render_widget(usage_gauge, chunks[1]);
 
         let ratio =  self.frequency / self.max_frequency;
         let frequency_gauge = LineGauge::default()
-            .block(Block::new().title("Frequency"))
+            .block(Block::new().title(format!("Frequency: {} MHz", self.frequency)))
             .filled_style(Style::default().fg(Color::Magenta))
             .filled_symbol(symbols::line::THICK_HORIZONTAL)
             .unfilled_symbol(symbols::line::THICK_HORIZONTAL)
-            .label(format!("{} MHz", self.frequency))
+            .label("")
             .ratio(ratio as f64);
         frame.render_widget(frequency_gauge, chunks[2]);
     }
@@ -303,19 +340,15 @@ impl<'a> App<'a> {
         let text = vec![
             Line::from(vec![
                 Span::from("Name: "),
-                Span::styled(self.name.clone(), Style::default().fg(Color::Rgb(255, 165, 0))),
-            ]),
-            Line::from(vec![
-                Span::from("Brand: "),
-                Span::styled(format!("63°C"), Style::default().fg(Color::Rgb(255, 165, 0))),
+                Span::styled(self.brand.clone(), Style::default().fg(Color::Rgb(255, 165, 0))),
             ]),
             Line::from(vec![
                 Span::from("Vendor ID: "),
-                Span::styled(format!("63°C"), Style::default().fg(Color::Rgb(255, 165, 0))),
+                Span::styled(self.vendor_id.clone(), Style::default().fg(Color::Rgb(255, 165, 0))),
             ]),
             Line::from(vec![
                 Span::from("Temperature: "),
-                Span::styled(format!("63°C"), Style::default().fg(Color::Rgb(255, 165, 0))),
+                Span::styled(self.temperature.to_string(), Style::default().fg(Color::Rgb(255, 165, 0))),
             ]),
         ];
         let paragraph = Paragraph::new(text).block(Block::bordered()).wrap(Wrap { trim: true });
